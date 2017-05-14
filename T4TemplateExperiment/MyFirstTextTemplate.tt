@@ -1,0 +1,89 @@
+﻿<#@ template debug="true" hostspecific="true" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="EnvDte" #>
+<#@ import namespace="EnvDTE" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Reflection" #>
+<#@ output extension=".cs" #>
+
+<#
+var visualStudio = System.Runtime.InteropServices.Marshal.GetActiveObject("VisualStudio.DTE.15.0") as EnvDTE.DTE;
+var projects = visualStudio.Solution.Projects;
+foreach (Project project in projects)
+{
+	foreach (ProjectItem projectItem in GetProjectItemsRecursively(project.ProjectItems))
+	{
+		var codeModel = projectItem.FileCodeModel;
+
+		if (codeModel != null)
+		{
+			foreach (CodeInterface codeInterface in GetCodeInterfaces(codeModel.CodeElements))
+			{
+				if (codeInterface.Attributes.Cast<CodeAttribute>().Any(c => c.Name == "WooMe"))
+				{
+					#>
+public class <#= codeInterface.Name + "Implementation" #> : <#= codeInterface.FullName #>
+{
+<#
+					foreach (CodeElement codeElement in codeInterface.Members)
+					{
+						if (codeElement.Kind == EnvDTE.vsCMElement.vsCMElementProperty) {
+							var property = codeElement as CodeProperty;
+							#>
+	public <#= property.Type.AsFullName #> <#= property.Name #> { get; set; }
+<#
+                        } else if (codeElement.Kind == EnvDTE.vsCMElement.vsCMElementFunction) {
+							var method = codeElement as CodeFunction;#>
+	public <#= method.Type.AsFullName.EndsWith("Void") ? "void" : method.Type.AsFullName #> <#= method.Name #>(<#
+							
+							var strs = new List<string>();
+
+							foreach (CodeParameter parameter in method.Parameters) {
+								strs.Add(parameter.Type.AsFullName + " " + parameter.Name);
+                            }
+							Write(string.Join(", ", strs));
+							#>)
+	{
+		throw new System.NotImplementedException();
+	}
+<#
+                        }
+                    }
+                }
+			}
+        }
+    }
+}
+#>
+}
+
+<#+
+public List<EnvDTE.ProjectItem> GetProjectItemsRecursively(EnvDTE.ProjectItems items)
+{
+    var ret = new List<EnvDTE.ProjectItem>();
+    if (items == null) return ret;
+    foreach(EnvDTE.ProjectItem item in items)
+    {
+    ret.Add(item);
+    ret.AddRange(GetProjectItemsRecursively(item.ProjectItems));
+    }
+    return ret;
+}
+
+public List<EnvDTE.CodeInterface> GetCodeInterfaces(EnvDTE.CodeElements codeElements)
+{
+    var ret = new List<EnvDTE.CodeInterface>();
+    if (codeElements == null) return ret;
+    foreach(EnvDTE.CodeElement codeElement in codeElements)
+    {
+		if (codeElement.Kind == EnvDTE.vsCMElement.vsCMElementInterface)
+		{
+			ret.Add(codeElement as EnvDTE.CodeInterface);
+        }
+		ret.AddRange(GetCodeInterfaces(codeElement.Children));
+    }
+    return ret;
+}
+#>
